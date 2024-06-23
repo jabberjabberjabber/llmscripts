@@ -14,25 +14,24 @@ class NLPProcessor:
         self.nlp.add_pipe('sentencizer')
         self.api_handler = api_handler
         
-    def estimate_tokens(self, text):
+    def preprocess(self, text):
+        metadata = []
         return self.api_handler.get_token_count(text)
 
     def chunkify(self, text, chunk_size, sample_size=20):
         doc = self.nlp(text)
         sentences = list(doc.sents)
-        
+                
         sample = random.sample(sentences, min(sample_size, len(sentences)))
         sample_text = " ".join(str(sent) for sent in sample)
         total_tokens = self.api_handler.get_token_count(sample_text)
         avg_tokens_per_sentence = total_tokens / len(sample)
-        
         sentences_per_chunk = max(1, int(chunk_size / avg_tokens_per_sentence))
         
         chunks = []
         for i in range(0, len(sentences), sentences_per_chunk):
             chunk = sentences[i:i + sentences_per_chunk]
             chunks.append(" ".join(str(sent) for sent in chunk))
-        
         return chunks
 
 class FileHandler:
@@ -182,31 +181,22 @@ class ConsoleUtils:
     def clear_console():
         os.system('cls' if os.name == 'nt' else 'clear')
 
-# Initialize global instances
-#api_handler = APIHandler('http://your-api-url', 'your-password')
-#nlp_processor = NLPProcessor(api_handler)
-#file_handler = FileHandler()
 
 def main():
-    # This function will contain code to demonstrate or test your utils
     genkey = f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
     print("Testing utils functionality...")
     
-    # Example usage:
     api_handler = APIHandler('http://172.16.0.219:5001/api', 'poop', genkey)
     nlp_processor = NLPProcessor(api_handler)
     file_handler = FileHandler()
 
-    # Test APIHandler
     test_text = "Od paru miesięcy pracuję w sklepie z płazem w nazwie. Wczoraj miałam chyba swoją najgorszą zmianę. Było zakończenie roku szkolnego, jakiś mecz i po prostu piątek wieczór - długa kolejka od nieustannie od 17.00 do 23.00 (przy dwóch otwartych kasach). Tyle, ile ja się bluzgów nasłuchałam w moją stronę, to chyba nie zliczę XDDDD Że jestem zjebana, że za wolno się ruszam, że jestem spierdoloną kurwą z kasy, że czemu odchodzę od kasy (pewnie szlam po jakąś paczkę na zaplecze), żebym szybciej robiła jakieś jedzenie albo mam wypierdalać. 99% obelg to mężczyźni w wieku 18-45."
     translated = api_handler.translate(test_text)
     print(f"Translated:\n\n'{test_text}'\n\nto:\n\n{translated}")
 
-    # Test NLPProcessor
     chunks = nlp_processor.chunkify("This is a test sentence. Here's another one. And a third.", 10)
     print(f"Chunked text: {chunks}")
 
-    # Test FileHandler
     test_filename = "test_file.txt"
     FileHandler.write_file(test_filename, "This is a test.")
     content = FileHandler.read_file(test_filename)
