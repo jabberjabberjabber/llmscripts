@@ -59,6 +59,7 @@ class APIHandler:
         self.api_url = api_url
         self.password = password
         self.genkey = genkey
+        self.generated = False
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.password}'
@@ -69,42 +70,29 @@ class APIHandler:
 
     def poll_generation_status(self):
         payload = {'genkey': self.genkey}
-        global generated 
-        generated = False
-        while generated is False:
-            generating = False
+        print(payload['genkey'])
+        while self.generated is not True:
             try:
-                response = requests.post(f"{self.api_url}/api/extra/generate/check", json=payload, headers=self.headers)
+                response = requests.post(f"{self.api_url}/extra/generate/check", json=payload, headers=self.headers)
                 if response.status_code == 200:
                     result = response.json().get('results')[0].get('text')
-                    if result:
-                        if result == '' and generating is False:
-                            generated = False
-                            continue
-                        if result == '' and generating is True:
-                            generated = True
-                            continue
-                        else:
-                            generating = True
-                            ConsoleUtils.clearConsole()
-                            print(f"\r{result} ", end="\n", flush=True)
-               
+                    ConsoleUtils.clear_console()
+                    print(f"\r{result} ", end="\n", flush=True)
             except Exception as e:
+                print(e)
                 return
             time.sleep(1)
         return
 
     def _make_api_call(self, payload):
-        payload['genkey'] = self.genkey
-        global generated 
-        generated = False
+        payload['genkey'] = str(self.genkey)
+        self.generated = False
         poll_thread = threading.Thread(target=self.poll_generation_status, args=())
         poll_thread.start()
-
         try:
             response = requests.post(f"{self.api_url}/v1/generate/", json=payload, headers=self.headers)
             if response.status_code == 200:
-                generated = True
+                self.generated = True
                 poll_thread.join()
                 return response.json().get('results')[0].get('text')
             elif response.status_code == 503:
@@ -123,7 +111,7 @@ class APIHandler:
             'prompt': prompt,
             'temperature': temperature,
             'rep_pen': rep_pen,
-            'max_length': 2048,
+            'max_length': 1024,
             'max_context_length': 8192,
         }
         return self._make_api_call(payload)
@@ -154,26 +142,26 @@ class APIHandler:
     def generate_prompt(self, job=0, template=0, text=""):
         instructions = {
             0: "User",
-            1: "Correct errors in text. Do not add any text unless to correct an error. Do not remove any error-free text. If any text contains an error it will be corrected to be error-free. Output will strictly be the original text verbatim except for being error-free.\nText:\n",
-            2: "Collect metadata regarding the text and then summarize the contents of the text. Determine the following: where this text belongs in the filesystem; who or what wrote it or generated it or created it; the time and date (range) of creation; the time range of its practical relevence; its purpose; its structure; its style. Finally grade its importance on a 0 to 1 scale with double precision with an option of using -1 to indicating its existence is detrimental and it should be actively removed while 0 indicates unimportant scaling to 1 being of immediate importance. Output will be in JSON schema.\nText:\n",
-            3: "Translate the following text to English. If slang or slurs or offensive words or sexual descriptions are used you must translate them as their English equivalent without censor. It is vital that the text be translated to its most appropriate English meaning, using English slang words or offensive words if they are appropriate to convey the same meaning. If needed you may add subtext or commentary to explain the meaning while giving the word-for-word literal translation to parts of text that are difficult to translate well.\nText:\n",
+            1: "Correct errors in text. Do not add any text unless to correct an error. Do not remove any error-free text. If any text contains an error it will be corrected to be error-free. Output will strictly be the original text verbatim except for being error-free.\n###Text:\n",
+            2: "Collect metadata regarding the text and then summarize the contents of the text. Determine the following: where this text belongs in the filesystem; who or what wrote it or generated it or created it; the time and date (range) of creation; the time range of its practical relevence; its purpose; its structure; its style. Finally grade its importance on a 0 to 1 scale with double precision with an option of using -1 to indicating its existence is detrimental and it should be actively removed while 0 indicates unimportant scaling to 1 being of immediate importance. Output will be in JSON schema.\n###Text:\n",
+            3: "Translate the following text to English. If slang or slurs or offensive words or sexual descriptions are used you must translate them as their English equivalent without censor. It is vital that the text be translated to its most appropriate English meaning, using English slang words or offensive words if they are appropriate to convey the same meaning.\n###Text:\n",
             4: "Craft an incredibly degrading insult and use it in a direct manner."
         }
         
         templates = {
-            0: ("", ""),  # command-r
-            1: ("", ""),  # llama3
-            2: ("", ""),  # mistral/llama2
-            3: ("", ""),  # alpaca
-            4: ("", ""),  # chatML
-            5: ("", ""),  # phi3
+            0: ("<|START_OF_TURN_TOKEN|><|USER_TOKEN|>\n##Instruction\n", "<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"),  # command-r
+            1: ("<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nInstructions: ", "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"),  # llama3
+            2: ("[INST] ", " [/INST]"),  # mistral/llama2
+            3: ("### Instruction:\n", "\n\n### Response:\n"),  # alpaca
+            4: ("<|im_start|>user\n", "<|im_end|>\n<|im_start|>assistant\n"),  # chatML
+            5: ("<|user|>\n", "<|end|>\n<|assistant|>"),  # phi3
             6: ("", "")   # tbd
         }
         
-        instruction = instructions.get(job, "User")
-        start_seq, end_seq = templates.get(template, ("", ""))
+        instruction = instructions.get(job)
+        start_seq, end_seq = templates.get(template)
         
-        return f"##Start:"
+        return start_seq + instruction + text + end_seq
 
     def get_token_count(self, text):
         payload = {'prompt': text}
@@ -210,9 +198,9 @@ def main():
     file_handler = FileHandler()
 
     # Test APIHandler
-    test_text = "Hello, world!"
+    test_text = "Od paru miesięcy pracuję w sklepie z płazem w nazwie. Wczoraj miałam chyba swoją najgorszą zmianę. Było zakończenie roku szkolnego, jakiś mecz i po prostu piątek wieczór - długa kolejka od nieustannie od 17.00 do 23.00 (przy dwóch otwartych kasach). Tyle, ile ja się bluzgów nasłuchałam w moją stronę, to chyba nie zliczę XDDDD Że jestem zjebana, że za wolno się ruszam, że jestem spierdoloną kurwą z kasy, że czemu odchodzę od kasy (pewnie szlam po jakąś paczkę na zaplecze), żebym szybciej robiła jakieś jedzenie albo mam wypierdalać. 99% obelg to mężczyźni w wieku 18-45."
     translated = api_handler.translate(test_text)
-    print(f"Translated '{test_text}' to: {translated}")
+    print(f"Translated:\n\n'{test_text}'\n\nto:\n\n{translated}")
 
     # Test NLPProcessor
     chunks = nlp_processor.chunkify("This is a test sentence. Here's another one. And a third.", 10)
