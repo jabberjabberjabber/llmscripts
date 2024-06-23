@@ -55,9 +55,10 @@ class FileHandler:
             print(f"Error while writing to file '{filename}': {e}")
 
 class APIHandler:
-    def __init__(self, api_url, password):
+    def __init__(self, api_url, password, genkey):
         self.api_url = api_url
         self.password = password
+        self.genkey = genkey
         self.headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.password}'
@@ -66,38 +67,44 @@ class APIHandler:
     def generate_genkey(self):
         return f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
 
-    def poll_generation_status(self, genkey):
-        payload = {'genkey': genkey}
-        
-        while True:
+    def poll_generation_status(self):
+        payload = {'genkey': self.genkey}
+        global generated 
+        generated = False
+        while generated is False:
+            generating = False
             try:
                 response = requests.post(f"{self.api_url}/api/extra/generate/check", json=payload, headers=self.headers)
                 if response.status_code == 200:
                     result = response.json().get('results')[0].get('text')
                     if result:
-                        ConsoleUtils.clear_console()
-                        print(f"\r{result}", end="\n", flush=True)
-                        if result.strip():
-                            return True
-                else:
-                    print(f"API responded with status code {response.status_code}: {response.text}")
-                    return False
+                        if result == '' and generating is False:
+                            generated = False
+                            continue
+                        if result == '' and generating is True:
+                            generated = True
+                            continue
+                        else:
+                            generating = True
+                            ConsoleUtils.clearConsole()
+                            print(f"\r{result} ", end="\n", flush=True)
+               
             except Exception as e:
-                print(f"Error in poll_generation_status: {e}")
-                return False
+                return
             time.sleep(1)
+        return
 
     def _make_api_call(self, payload):
-        genkey = self.generate_genkey()
-        payload['genkey'] = genkey
-        payload['quiet'] = 'quiet'
-
-        poll_thread = threading.Thread(target=self.poll_generation_status, args=(genkey,))
+        payload['genkey'] = self.genkey
+        global generated 
+        generated = False
+        poll_thread = threading.Thread(target=self.poll_generation_status, args=())
         poll_thread.start()
 
         try:
-            response = requests.post(self.api_url, json=payload, headers=self.headers)
+            response = requests.post(f"{self.api_url}/v1/generate/", json=payload, headers=self.headers)
             if response.status_code == 200:
+                generated = True
                 poll_thread.join()
                 return response.json().get('results')[0].get('text')
             elif response.status_code == 503:
@@ -166,13 +173,13 @@ class APIHandler:
         instruction = instructions.get(job, "User")
         start_seq, end_seq = templates.get(template, ("", ""))
         
-        return f"{start_seq}{instruction}{text}{end_seq}"
+        return f"##Start:"
 
     def get_token_count(self, text):
         payload = {'prompt': text}
         
         try:
-            response = requests.post(f"{self.api_url}/api/extra/tokencount", json=payload, headers=self.headers)
+            response = requests.post(f"{self.api_url}/extra/tokencount", json=payload, headers=self.headers)
             if response.status_code == 200:
                 return response.json().get('value', 0)
             else:
@@ -188,6 +195,38 @@ class ConsoleUtils:
         os.system('cls' if os.name == 'nt' else 'clear')
 
 # Initialize global instances
-api_handler = APIHandler('http://your-api-url', 'your-password')
-nlp_processor = NLPProcessor(api_handler)
-file_handler = FileHandler()
+#api_handler = APIHandler('http://your-api-url', 'your-password')
+#nlp_processor = NLPProcessor(api_handler)
+#file_handler = FileHandler()
+
+def main():
+    # This function will contain code to demonstrate or test your utils
+    genkey = f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
+    print("Testing utils functionality...")
+    
+    # Example usage:
+    api_handler = APIHandler('http://172.16.0.219:5001/api', 'poop', genkey)
+    nlp_processor = NLPProcessor(api_handler)
+    file_handler = FileHandler()
+
+    # Test APIHandler
+    test_text = "Hello, world!"
+    translated = api_handler.translate(test_text)
+    print(f"Translated '{test_text}' to: {translated}")
+
+    # Test NLPProcessor
+    chunks = nlp_processor.chunkify("This is a test sentence. Here's another one. And a third.", 10)
+    print(f"Chunked text: {chunks}")
+
+    # Test FileHandler
+    test_filename = "test_file.txt"
+    FileHandler.write_file(test_filename, "This is a test.")
+    content = FileHandler.read_file(test_filename)
+    print(f"Read from file: {content}")
+
+    print("Utils testing complete.")
+    
+    return
+    
+if __name__ == "__main__":
+    main()
