@@ -8,6 +8,32 @@ import ftfy
 import spacy
 from spacy.lang.en import English
 
+json = '''root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
+
+object ::=
+  "{" ws (
+            string ":" ws value
+    ("," ws string ":" ws value)*
+  )? "}" ws
+
+array  ::=
+  "[" ws (
+            value
+    ("," ws value)*
+  )? "]" ws
+
+string ::=
+  "\"" (
+    [^"\\] |
+    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) # escapes
+  )* "\"" ws
+
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+
+# Optional space: by convention, applied in this grammar after literal chars when allowed
+ws ::= ([ \t\n] ws)?'''
+
 class NLPProcessor:
     def __init__(self, api_handler):
         self.nlp = English()
@@ -54,10 +80,10 @@ class FileHandler:
             print(f"Error while writing to file '{filename}': {e}")
 
 class APIHandler:
-    def __init__(self, api_url, password, genkey):
+    def __init__(self, api_url, password):
         self.api_url = api_url
         self.password = password
-        self.genkey = genkey
+        self.genkey = genkey = f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
         self.generated = False
         self.headers = {
             'Content-Type': 'application/json',
@@ -186,7 +212,7 @@ def main():
     genkey = f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
     print("Testing utils functionality...")
     
-    api_handler = APIHandler('http://172.16.0.219:5001/api', 'poop', genkey)
+    api_handler = APIHandler('http://172.16.0.219:5001/api', 'poop')
     nlp_processor = NLPProcessor(api_handler)
     file_handler = FileHandler()
 
