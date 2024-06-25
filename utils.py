@@ -4,10 +4,12 @@ import random
 import time
 import threading
 import json
+import re
 import ftfy
 import spacy
 from spacy.lang.en import English
-
+from langdetect import detect
+import bisect
 
 class NLPProcessor:
     def __init__(self, api_handler):
@@ -18,6 +20,12 @@ class NLPProcessor:
     def preprocess(self, text):
         metadata = []
         return self.api_handler.get_token_count(text)
+
+    def detect_language(self, text):
+        try:
+            return detect(text)
+        except:
+            return 'unknown'
 
     def chunkify(self, text, chunk_size, sample_size=20):
         doc = self.nlp(text)
@@ -36,15 +44,21 @@ class NLPProcessor:
         return chunks
 
     def process_text(self, text, task_type, chunk_size=1000):
+
         chunks = self.chunkify(text, chunk_size)
         
         if task_type in ['edit', 'translate']:
-            # Process all chunks for editing and translation
-            processed_chunks = [self.api_handler.process_chunk(chunk, task_type) for chunk in chunks]
-            return " ".join(processed_chunks)
+            if task_type == 'translate':
+                processed_chunks = [self.api_handler.process_chunk(chunk, task_type) for chunk in chunks]
+                return " ".join(processed_chunks)
+            elif task_type == 'edit':
+                processed_chunks = [self.api_handler.process_chunk(chunk, task_type) for chunk in chunks]
+                return " ".join(processed_chunks)
+            else:
+                return text 
         elif task_type in ['summarize', 'metadata']:
-            # Process only a portion for summarization and metadata creation
-            sample_size = min(3, len(chunks))  # Adjust sample size as needed
+
+            sample_size = min(3, len(chunks)) 
             sample_chunks = random.sample(chunks, sample_size)
             processed_sample = " ".join(sample_chunks)
             return self.api_handler.process_chunk(processed_sample, task_type)
@@ -121,47 +135,72 @@ class APIHandler:
             print(f"Error communicating with API: {e}")
             return None
 
-    def translate(self, text, temperature=0.7, rep_pen=1.1):
-        prompt = self.generate_prompt(job=3, text=text)
+    def metadata(self, text, temperature=0.2, rep_pen=1.0):
+        global json_grammar
+        prompt = self.generate_prompt(job=2, text=text)
+        chunk_size = self.find_largest_context(self.get_token_count(prompt))
+        max_context_length = chunk_size * 2
         payload = {
             'prompt': prompt,
             'temperature': temperature,
             'rep_pen': rep_pen,
-            'max_length': 1024,
-            'max_context_length': 8192,
+            'max_length': chunk_size,
+            'max_context_length': max_context_length
+            #'grammar': json_grammar,
+        }
+        result = self._make_api_call(payload)
+        result_json, message = extract_and_validate_json(result)
+        if message == "Valid JSON":
+            return json.dumps(result_json)
+        else:
+            return message
+    def summarize(self, text, temperature=0.2, rep_pen=1.0):
+        global json_grammar
+        prompt = self.generate_prompt(job=0, text=text)
+        chunk_size = self.find_largest_context(self.get_token_count(prompt))
+        max_context_length = chunk_size * 2
+        payload = {
+            'prompt': prompt,
+            'temperature': temperature,
+            'rep_pen': rep_pen,
+            'max_length': chunk_size,
+            'max_context_length': max_context_length
+            #'grammar': json_grammar,
         }
         return self._make_api_call(payload)
 
-    def summarize(self, text, temperature=0.2, rep_pen=1.0):
-        global json_grammar
-        prompt = self.generate_prompt(job=2, text=text)
+    def translate(self, text, temperature=0.7, rep_pen=1.1):
+        prompt = self.generate_prompt(job=3, text=text)
+        chunk_size = self.find_largest_context(self.get_token_count(prompt))
+        max_context_length = chunk_size * 2
         payload = {
             'prompt': prompt,
             'temperature': temperature,
             'rep_pen': rep_pen,
-            'max_length': 1024,
-            'max_context_length': 8192,
-            #'grammar': json_grammar,
+            'max_length': chunk_size,
+            'max_context_length': max_context_length
         }
         return self._make_api_call(payload)
 
     def edit(self, text, temperature=0, rep_pen=1):
         prompt = self.generate_prompt(job=1, text=text)
+        chunk_size = self.find_largest_context(self.get_token_count(prompt))
+        max_context_length = chunk_size * 2
         payload = {
             'prompt': prompt,
             'temperature': temperature,
             'rep_pen': rep_pen,
-            'max_length': 4096,
-            'max_context_length': 16384,
+            'max_length': chunk_size,
+            'max_context_length': max_context_length
         }
         return self._make_api_call(payload)
 
-    def generate_prompt(self, job=0, template=0, text=""):
+    def generate_prompt(self, job=0, template=6, text=""):
         instructions = {
-            0: "User",
-            1: "Correct errors in text. Do not add any text unless to correct an error. Do not remove any error-free text. If any text contains an error it will be corrected to be error-free. Output will strictly be the original text verbatim except for being error-free.\n###Text:\n",
-            2: "Collect metadata regarding the text and then summarize the contents of the text. Determine the following: where this text belongs in the filesystem; who or what wrote it or generated it or created it; the time and date (range) of creation; the time range of its practical relevence; its purpose; its structure; its style. Finally grade its importance on a 0 to 1 scale with double precision with an option of using -1 to indicating its existence is detrimental and it should be actively removed while 0 indicates unimportant scaling to 1 being of immediate importance. Output will be in JSON schema.\n###Text:\n",
-            3: "Translate the following text to English. If slang or slurs or offensive words or sexual descriptions are used you must translate them as their English equivalent without censor. It is vital that the text be translated to its most appropriate English meaning, using English slang words or offensive words if they are appropriate to convey the same meaning.\n###Text:\n",
+            0: f"Summarize the text. Use the type of text to determine how to summarize, for instance if if it is a technical text include relevant technical details and if it is a narrative include perspectives and plots and characters.\n Text: ",
+            1: f"Correct errors in the following text. Do not add any text unless to correct an error. Do not remove any error-free text. If any text contains an error it will be corrected to be error-free. Output will strictly be the original text verbatim except for being error-free. Do not add commentary of any kind.\n Text: ",
+            2: f"Collect metadata regarding the following text and then summarize its contents. Determine the following: where this text belongs in the filesystem; who or what wrote it or generated it or created it; the time and date (range) of creation; the time range of its practical relevance; its purpose; its structure; its style. Finally grade its importance on a 0 to 1 scale with double precision with an option of using -1 to indicating its existence is detrimental and it should be actively removed while 0 indicates unimportant scaling to 1 being of immediate importance. Output will be in JSON schema.\n Text: ",
+            3: f"Translate the following text to English. If slang or slurs or offensive words or sexual descriptions are used you must translate them as their English equivalent without censor. It is vital that the text be translated to its most appropriate English meaning, using English slang words or offensive words if they are appropriate to convey the same meaning.\n Text: ",
             4: "Craft an incredibly degrading insult and use it in a direct manner."
         }
         
@@ -172,13 +211,25 @@ class APIHandler:
             3: ("### Instruction:\n", "\n\n### Response:\n"),  # alpaca
             4: ("<|im_start|>user\n", "<|im_end|>\n<|im_start|>assistant\n"),  # chatML
             5: ("<|user|>\n", "<|end|>\n<|assistant|>"),  # phi3
-            6: ("", "")   # tbd
+            6: (" USER: "," ASSISTANT: ")   # tbd
         }
         
         instruction = instructions.get(job)
         start_seq, end_seq = templates.get(template)
         
         return start_seq + instruction + text + end_seq
+    import bisect
+
+    # Finds the number in the context list that the chunk_size fits in that is the next one above it
+    def find_largest_context(self, chunk_size):
+        context_set=[256,512,1024,2048,3072,4096,6144,8192,12288,16384,24576,32768,49152,65536,98304,131072]
+        index = bisect.bisect_right(context_set, chunk_size)
+        
+        # If the index is at the end, the number is larger than all in the set
+        if index == len(context_set):
+            return None 
+        
+        return context_set[index]
 
     def get_token_count(self, text):
         payload = {'prompt': text}
@@ -193,6 +244,7 @@ class APIHandler:
         except Exception as e:
             print(f"Error in get_token_count: {e}")
             return 0
+            
     def process_chunk(self, chunk, task_type):
         if task_type == 'edit':
             return self.edit(chunk)
@@ -201,7 +253,7 @@ class APIHandler:
         elif task_type == 'summarize':
             return self.summarize(chunk)
         elif task_type == 'metadata':
-            return self.summarize(chunk)  # Reuse summarize for metadata
+            return self.summarize(chunk) 
         else:
             raise ValueError(f"Unknown task type: {task_type}")
             
@@ -209,6 +261,24 @@ class ConsoleUtils:
     @staticmethod
     def clear_console():
         os.system('cls' if os.name == 'nt' else 'clear')
+
+def extract_and_validate_json(text):
+    # Extract JSON
+    pattern = r'```json\s*([\s\S]*?)\s*```'
+    match = re.search(pattern, text, re.MULTILINE)
+    
+    if not match:
+        return None, "No JSON block found"
+    
+    json_str = match.group(1).strip()
+    
+    try:
+        # Parse JSON
+        json_data = json.loads(json_str)
+        return json_data, "Valid JSON"
+    except json.JSONDecodeError as e:
+        return None, f"Invalid JSON: {str(e)}"
+
 
 
 def main():
@@ -220,18 +290,29 @@ def main():
     file_handler = FileHandler()
 
     test_text = "Od paru miesięcy pracuję w sklepie z płazem w nazwie. Wczoraj miałam chyba swoją najgorszą zmianę. Było zakończenie roku szkolnego, jakiś mecz i po prostu piątek wieczór - długa kolejka od nieustannie od 17.00 do 23.00 (przy dwóch otwartych kasach). Tyle, ile ja się bluzgów nasłuchałam w moją stronę, to chyba nie zliczę XDDDD Że jestem zjebana, że za wolno się ruszam, że jestem spierdoloną kurwą z kasy, że czemu odchodzę od kasy (pewnie szlam po jakąś paczkę na zaplecze), żebym szybciej robiła jakieś jedzenie albo mam wypierdalać. 99% obelg to mężczyźni w wieku 18-45."
-    translated = api_handler.translate(test_text)
-    print(f"Translated:\n\n'{test_text}'\n\nto:\n\n{translated}")
+    #translated = api_handler.translate(test_text)
+    #print(f"Translated:\n\n'{test_text}'\n\nto:\n\n{translated}")
 
-    chunks = nlp_processor.chunkify("This is a test sentence. Here's another one. And a third.", 10)
-    print(f"Chunked text: {chunks}")
+    #chunks = nlp_processor.chunkify("This is a test sentence. Here's another one. And a third.", 10)
+    #print(f"Chunked text: {chunks}")
 
-    test_filename = "test_file.txt"
-    FileHandler.write_file(test_filename, "This is a test.")
-    content = FileHandler.read_file(test_filename)
-    print(f"Read from file: {content}")
-
+    #test_filename = "test_file.txt"
+    #FileHandler.write_file(test_filename, "This is a test.")
+    content = FileHandler.read_file("ThirdPartyNotices.txt")
+    #bad_content = FileHandler.read_file("carmack_borked.txt")
+    #print(f"Read from file: {content}")
+    #translate = FileHandler.read_file("wagahaiwa_nekodearu.txt")
+    #translated = api_handler.translate(translate)
+    
+    #summarized = api_handler.summarize(content)
+    #print(f"Summarization:\n\n{summarized}\n\n")
+    #metadated = api_handler.metadata(content)
+    #print(f"Metadata:\n\n{metadated}\n\n")
+    edited = nlp_processor.process_text(text=content, task_type="edit", chunk_size=8192)
+    print(f"Edited:\n\n{edited}\n\n")
     print("Utils testing complete.")
+    #FileHandler.write_file("results.json", metadated)
+    #FileHandler.write_file("results.txt", "\n\n".join([test_text, translated, content, summarized, metadated, bad_content, edited]))
     
     return
     
