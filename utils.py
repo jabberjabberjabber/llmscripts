@@ -8,31 +8,6 @@ import ftfy
 import spacy
 from spacy.lang.en import English
 
-json = '''root   ::= object
-value  ::= object | array | string | number | ("true" | "false" | "null") ws
-
-object ::=
-  "{" ws (
-            string ":" ws value
-    ("," ws string ":" ws value)*
-  )? "}" ws
-
-array  ::=
-  "[" ws (
-            value
-    ("," ws value)*
-  )? "]" ws
-
-string ::=
-  "\"" (
-    [^"\\] |
-    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) # escapes
-  )* "\"" ws
-
-number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
-
-# Optional space: by convention, applied in this grammar after literal chars when allowed
-ws ::= ([ \t\n] ws)?'''
 
 class NLPProcessor:
     def __init__(self, api_handler):
@@ -59,6 +34,22 @@ class NLPProcessor:
             chunk = sentences[i:i + sentences_per_chunk]
             chunks.append(" ".join(str(sent) for sent in chunk))
         return chunks
+
+    def process_text(self, text, task_type, chunk_size=1000):
+        chunks = self.chunkify(text, chunk_size)
+        
+        if task_type in ['edit', 'translate']:
+            # Process all chunks for editing and translation
+            processed_chunks = [self.api_handler.process_chunk(chunk, task_type) for chunk in chunks]
+            return " ".join(processed_chunks)
+        elif task_type in ['summarize', 'metadata']:
+            # Process only a portion for summarization and metadata creation
+            sample_size = min(3, len(chunks))  # Adjust sample size as needed
+            sample_chunks = random.sample(chunks, sample_size)
+            processed_sample = " ".join(sample_chunks)
+            return self.api_handler.process_chunk(processed_sample, task_type)
+        else:
+            raise ValueError(f"Unknown task type: {task_type}")
 
 class FileHandler:
     @staticmethod
@@ -95,7 +86,7 @@ class APIHandler:
 
     def poll_generation_status(self):
         payload = {'genkey': self.genkey}
-        print(payload['genkey'])
+
         while self.generated is not True:
             try:
                 response = requests.post(f"{self.api_url}/extra/generate/check", json=payload, headers=self.headers)
@@ -142,6 +133,7 @@ class APIHandler:
         return self._make_api_call(payload)
 
     def summarize(self, text, temperature=0.2, rep_pen=1.0):
+        global json_grammar
         prompt = self.generate_prompt(job=2, text=text)
         payload = {
             'prompt': prompt,
@@ -149,7 +141,7 @@ class APIHandler:
             'rep_pen': rep_pen,
             'max_length': 1024,
             'max_context_length': 8192,
-            'grammar': 'json.gbnf',
+            #'grammar': json_grammar,
         }
         return self._make_api_call(payload)
 
@@ -201,7 +193,18 @@ class APIHandler:
         except Exception as e:
             print(f"Error in get_token_count: {e}")
             return 0
-
+    def process_chunk(self, chunk, task_type):
+        if task_type == 'edit':
+            return self.edit(chunk)
+        elif task_type == 'translate':
+            return self.translate(chunk)
+        elif task_type == 'summarize':
+            return self.summarize(chunk)
+        elif task_type == 'metadata':
+            return self.summarize(chunk)  # Reuse summarize for metadata
+        else:
+            raise ValueError(f"Unknown task type: {task_type}")
+            
 class ConsoleUtils:
     @staticmethod
     def clear_console():
