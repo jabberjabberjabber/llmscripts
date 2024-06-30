@@ -1,0 +1,61 @@
+{
+    "summarize": {
+        "instruction": "Provide a concise summary of the following text:",
+        "num_chunks": 4,
+        "write_result": true,
+        "parameters": {
+            "temperature": 0.7,
+            "min_p": 0.05,
+            "top_p": 0.9,
+            "rep_pen": 1.05
+        }
+    },
+    "info": {
+        "instruction": "What is this document?",
+        "num_chunks": 2,
+        "write_result": true,
+        "parameters": {
+            "temperature": 0.7,
+            "min_p": 0.05,
+            "top_p": 0.9,
+            "rep_pen": 1.05
+        }
+    },
+    "translate": {
+        "instruction": "Translate the following text to English:",
+        "write_result": true,
+        "parameters": {
+            "temperature": 0.3,
+            "min_p": 0.1
+        }
+    },
+    "metadata": {
+        "instruction": "Extract metadata from the following text:",
+        "num_chunks": 2,
+        "write_result": true,
+        "parameters": {
+            "temperature": 0.5,
+            "min_p": 0.05
+        }
+    },
+    "codes": {
+        "instruction": "Output the information using JSON schema.\nText: ",
+        "num_chunks": 4,
+        "write_result": true,
+        "parameters": {
+            "temperature": 1,
+            "min_p": 0.05,
+            "rep_pen": 1
+        }
+    },
+    "custom": {
+        "instruction": "This is a placeholder.\nText: ",
+        "num_chunks": 0,
+        "write_result": false,
+        "parameters": {
+            "temperature": 1,
+            "min_p": 0.05,
+            "rep_pen": 1
+        }
+    }
+}
