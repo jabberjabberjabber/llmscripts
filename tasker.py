@@ -5,6 +5,7 @@ from llmer import LLMProcessor
 import argparse
 from collections import defaultdict
 from tika import parser
+from json_repair import repair_json
 
 def get_basic_metadata(file_path):
     return {
@@ -12,7 +13,34 @@ def get_basic_metadata(file_path):
         'created': os.path.getctime(file_path),
         'modified': os.path.getmtime(file_path)
     }
-
+def clean_json(data):
+    if data is None:
+        return ""
+    
+    # Remove newlines and replace smart quotes
+    data = re.sub(r'\n', ' ', data)
+    data = re.sub(r'["""]', '"', data)
+    
+    # Extract JSON from code blocks
+    pattern = r'```json\s*(.*?)\s*```'
+    match = re.search(pattern, data, re.DOTALL)
+    
+    if match:
+        json_str = match.group(1).strip()
+    else:
+        # If no code block, try to find JSON-like structure
+        json_str = re.search(r'\{.*\}', data, re.DOTALL)
+        if json_str:
+            json_str = json_str.group(0)
+        else:
+            return data  # No JSON-like structure found
+    
+    # Remove trailing comma if present
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    return json.loads(repair_json(json_str))
+    
 def read_file_content(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -26,18 +54,6 @@ def parse_with_tika(file_path):
     
 
 def write_to_json(file_path, data):
-    #look for the wizardlm json output which has three backticks and json
-    #and strip it out
-    #pattern = r'```json\s*([\s\S]*?)\s*```'
-    #match = re.search(pattern, json.dumps(data), re.MULTILINE)
-    #if match:
-     #   json_str = match.group(1).strip()
-      #  try:
-       #     json.loads(json_str)
-       # except json.JSONDecodeError as e:
-        #    print (f"Invalid JSON: {str(e)}")
-         #   return
-    #otherwise write it as if it is good
     json_path = f"{file_path}_info.json"
     if os.path.exists(json_path):
         '''with open(json_path, 'r+') as file:
@@ -49,11 +65,12 @@ def write_to_json(file_path, data):
             file.write(json_data)
     '''
         print(f"File already exists: {json_path}")
-    else:
-        with open(json_path, 'w') as file:
-            file.write(json.dumps(data))
-        print(f"Result written to: {json_path}")
-
+    #clean_json = json.loads(data)
+    with open(json_path, 'w', encoding='utf-8') as file:
+    
+        json.dump(data, file, indent=2, ensure_ascii=False)
+    print(f"Result written to: {json_path}")
+    
 def read_from_json(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
@@ -136,6 +153,7 @@ class TaskProcessor:
                 result = self.process_tasks(file_info, content, tasks)
                 if result:
                     results[file_path] = result
+                    
         return results
 
     def process_tasks(self, file_info, content, tasks):
@@ -149,31 +167,32 @@ class TaskProcessor:
                 task_config = self.all_tasks_config.get(task)
                 num_chunks = task_config.get('num_chunks')
                 if task_config:
-                    task_result = self.llm_processor.process_text(
+                    result[task] = self.llm_processor.process_text(
                         content,  
                         task_config,
                         num_chunks=num_chunks
                     )
-                    result[task] = task_result
+                    result[task] = clean_json(result[task])
             except Exception as e:
                 print(f"Error processing task '{task}': {str(e)}")
                 result[task] = f"Error: {str(e)}"
      
-        if task_config.get('write_result', False):
-            write_to_json(file_info['path'], result) 
+         
         return result if len(result) > 1 else None
 
 def main():
     parser = argparse.ArgumentParser(description='Process documents in filesystem')
     parser.add_argument('--api-url', default='http://172.16.0.219:5001/api', help='the URL of the LLM API')
-    parser.add_argument('--chunksize', default=512, type=int, help='max tokens per chunk')
+    parser.add_argument('--chunksize', default=1024, type=int, help='max tokens per chunk')
     parser.add_argument('--password', default='', help='server password')
-    parser.add_argument('--model', default='wizard', help='model to use')
+    parser.add_argument('--model', default='llama3', help='llama3, cmdr, wizard, chatml, alpaca, mistral, phi3')
     parser.add_argument('directory', help='Directory to search')
-    parser.add_argument('--recursive', action='store_true', help='Search recursively')
-    parser.add_argument('--categories', nargs='+', help='File categories or extensions to process')
-    parser.add_argument('--tasks', nargs='+', default=['info'], help='Tasks to perform')
-    parser.add_argument('--task-config', default='task_config.json', help='Path to task configuration file')
+    parser.add_argument('--recursive', action='store_false', help='Search recursively')
+    parser.add_argument('--categories', nargs='+', help='document, spreadsheet, web, code, archive')
+    parser.add_argument('--tasks', nargs='+', default=['info'], help='info, summarize, translate, interrogate, metadata, custom')
+    parser.add_argument('--task-config', default='task_config.json', help='task_config.json')
+    parser.add_argument('--write-json', action='store_true', help='Write to json')
+    parser.add_argument('--output-file', default='results', help='json output-file')
     args = parser.parse_args()
 
             
@@ -182,14 +201,8 @@ def main():
     llm_processor = LLMProcessor(args.api_url, args.password, args.model, args.chunksize)
     task_processor = TaskProcessor(llm_processor, args.task_config)
     results = task_processor.process_files(file_list, args.tasks)
-    
-    # Print results summary
-    for file_path, result in results.items():
-        print(f"\nFile: {file_path}")
-        #for task, task_result in result.items():
-            #if task != 'file_info':
-                #print(f"  {task.capitalize()}: {task_result[:100]}...")  # Print first 100 chars of each task result
-
+    if args.write_json:
+        write_to_json(args.output_file, results)
     total_files_processed = len(results)
     print(f"\nTotal files processed: {total_files_processed}")
 

@@ -4,10 +4,10 @@
         "num_chunks": 4,
         "write_result": true,
         "parameters": {
-            "temperature": 0.7,
-            "min_p": 0.05,
-            "top_p": 0.9,
-            "rep_pen": 1.05
+            "temperature": 1,
+            "min_p": 0,
+            "top_p": 1,
+            "rep_pen": 1
         }
     },
     "info": {
@@ -30,15 +30,15 @@
         }
     },
     "metadata": {
-        "instruction": "Extract metadata from the following text:",
+        "instruction": "Extract metadata from the following text and return it using JSON schema:",
         "num_chunks": 2,
         "write_result": true,
         "parameters": {
-            "temperature": 0.5,
-            "min_p": 0.05
+            "temperature": 1,
+            "min_p": 0
         }
     },
-    "codes": {
+    "json": {
         "instruction": "Output the information using JSON schema.\nText: ",
         "num_chunks": 4,
         "write_result": true,

@@ -7,6 +7,8 @@ import time
 import threading
 import bisect
 from spacy.lang.en import English
+import base64
+
 
 class LLMProcessor:
     def __init__(self, api_url, password="", model="wizard", chunk_size=512):
@@ -23,8 +25,31 @@ class LLMProcessor:
             'Authorization': f'Bearer {self.password}'
         }
 
+
+    def interrogate_image(self, image_path):
+        try:
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            payload = {
+                'image': base64_image,
+                'model': 'clip',  # KoboldCpp uses CLIP for image interrogation
+                'max_length': 2048,
+                'max_context_length': 8192
+            }
+            
+            response = requests.post(f"{self.api_url}/sdapi/v1/interrogate", json=payload, headers=self.headers)
+            if response.status_code == 200:
+                return response.json().get('caption', '')
+            else:
+                print(f"Image interrogation failed with status code {response.status_code}: {response.text}")
+                return None
+        except Exception as e:
+            print(f"Error in image interrogation: {e}")
+            return None
+
     def process_text(self, content, task, num_chunks=None):
-        cleaned_content = self.clean_text(content)
+        cleaned_content = self.cleanup_content(content)
         max_context_length = self.get_from_api("true_max_context_length")
         temp = []
         chunks = self.chunkify(cleaned_content, num_chunks=num_chunks)
@@ -32,7 +57,7 @@ class LLMProcessor:
             temp.append(" ".join(chunks))
             chunks = temp
         for chunk in chunks:    
-            prompt = self.generate_prompt(task.get('instruction'), text=chunk)
+            prompt = self.prompt_template(task.get('instruction'), content=chunk)
             tokens = self.get_token_count(prompt)
             if tokens > max_context_length:
                 print(f"Too many tokens: {tokens} in for chunk")
@@ -44,10 +69,10 @@ class LLMProcessor:
                 'max_context_length': max_context_length,
                 **task.get('parameters', {})
             }
-            return self._make_api_call(payload)
+            return self._call_api(payload)
             
-    def chunkify(self, text, sample_size=20, num_chunks=None):
-        doc = self.nlp(text)
+    def chunkify(self, content, sample_size=20, num_chunks=None):
+        doc = self.nlp(content)
         sentences = list(doc.sents)
         
         sample = sentences if len(sentences) <= sample_size else random.sample(sentences, sample_size)
@@ -78,7 +103,7 @@ class LLMProcessor:
                 return [chunks[0]]  # If num_chunks is 1, return only the first chunk
         else:
             return chunks
-    def generate_prompt(self, instruction, text ):
+    def prompt_template(self, instruction, content ):
         templates = {
             "cmdr": ("<|START_OF_TURN_TOKEN|><|USER_TOKEN|>\n##Instruction\n", "<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"),
             "llama3": ("<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nInstructions: ", "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"),
@@ -89,9 +114,9 @@ class LLMProcessor:
             "wizard": (" USER: "," ASSISTANT: ")
         }
         start_seq, end_seq = templates.get(self.model, templates["wizard"])
-        return start_seq + instruction + text + end_seq
+        return start_seq + instruction + content + end_seq
 
-    def _make_api_call(self, payload):
+    def _call_api(self, payload):
         payload['genkey'] = str(self.genkey)
         self.generated = False
         poll_thread = threading.Thread(target=self.poll_generation_status)
@@ -131,8 +156,8 @@ class LLMProcessor:
         index = bisect.bisect_right(context_set, chunk_size)
         return context_set[index] if index < len(context_set) else None
 
-    def get_token_count(self, text):
-        payload = {'prompt': text, 'genkey': self.genkey}
+    def get_token_count(self, content):
+        payload = {'prompt': content, 'genkey': self.genkey}
         try:
             response = requests.post(f"{self.api_url}/extra/tokencount", json=payload, headers=self.headers)
             if response.status_code == 200:
@@ -156,13 +181,13 @@ class LLMProcessor:
             print(f"Error in get_from_api: {e}")
             return 0
                 
-    def clean_text(self, text):
-        if text is None:
+    def cleanup_content(self, content):
+        if content is None:
             return ""
-        text = ftfy.fix_text(text)
-        text = re.sub(r'\n+', '\n', text)
-        text = re.sub(r' +', ' ', text)
-        return text.strip()
+        content = ftfy.fix_text(content)
+        content = re.sub(r'\n+', '\n', content)
+        content = re.sub(r' +', ' ', content)
+        return content.strip()
 
 
 
