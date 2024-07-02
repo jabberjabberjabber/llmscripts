@@ -3,9 +3,40 @@ import os
 import re
 from llmer import LLMProcessor
 import argparse
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from tika import parser
 from json_repair import repair_json
+from natsort import os_sorted
+
+# -----------------------------
+# Start of written by claud 3.5
+# -----------------------------
+
+# This was added so that the file order would be the same as
+# Windows explorer
+Node = namedtuple('Node', 'path isdir')
+
+def scan_directory(path):
+    """
+    Scan a directory and return sorted Node objects using natsort.os_sorted().
+    """
+    try:
+        with os.scandir(path) as it:
+            # Create a list of Node objects for each entry in the directory
+            entries = [Node(e.path, e.is_dir(follow_symlinks=False)) for e in it]
+            
+            # Use natsort.os_sorted() to sort the entries
+            # This will sort in the same order as the operating system's file browser
+            sorted_entries = os_sorted(entries, key=lambda x: x.path)
+            
+        return sorted_entries
+    except OSError:
+        # Return an empty list if there's an error (e.g., permission denied)
+        return []
+
+# ----------------------------
+# end of written by claude 3.5
+# ----------------------------
 
 def get_basic_metadata(file_path):
     return {
@@ -13,32 +44,40 @@ def get_basic_metadata(file_path):
         'created': os.path.getctime(file_path),
         'modified': os.path.getmtime(file_path)
     }
+    
 def clean_json(data):
+    '''
+    llms can output json but some of them like to add commentary or 
+    code blocks before the json, and sometimes they screw it up
+    slightly. Also, sometimes json comes in a string instead
+    of an object and when we dump it we get a lot of crap
+    this removes line breaks and smart quotes, looks for 
+    code blocks, and removes them.
+    '''
+    
     if data is None:
         return ""
     
-    # Remove newlines and replace smart quotes
     data = re.sub(r'\n', ' ', data)
     data = re.sub(r'["""]', '"', data)
-    
-    # Extract JSON from code blocks
+        
     pattern = r'```json\s*(.*?)\s*```'
     match = re.search(pattern, data, re.DOTALL)
     
     if match:
         json_str = match.group(1).strip()
     else:
-        # If no code block, try to find JSON-like structure
         json_str = re.search(r'\{.*\}', data, re.DOTALL)
         if json_str:
             json_str = json_str.group(0)
         else:
-            return data  # No JSON-like structure found
+            return data 
     
     # Remove trailing comma if present
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
     
+    #using loads again undoes a lot of stupid crap
     return json.loads(repair_json(json_str))
     
 def read_file_content(file_path):
@@ -51,7 +90,6 @@ def read_file_content(file_path):
 def parse_with_tika(file_path):
     parsed = parser.from_file(file_path)
     return parsed.get('content', '')
-    
 
 def write_to_json(file_path, data):
     json_path = f"{file_path}_info.json"
@@ -65,7 +103,7 @@ def write_to_json(file_path, data):
             file.write(json_data)
     '''
         print(f"File already exists: {json_path}")
-    #clean_json = json.loads(data)
+        
     with open(json_path, 'w', encoding='utf-8') as file:
     
         json.dump(data, file, indent=2, ensure_ascii=False)
@@ -96,21 +134,37 @@ class FileCrawler:
             "archive": ["zip", "rar", "7z", "tar", "gz"]
         }
 
+
+# ------------------------------
+# start of written by claude 3.5
+# ------------------------------
+    
     def crawl(self, directory, recursive=False, categories=None):
+        # Use defaultdict to automatically create lists for new categories
         file_list = defaultdict(list)
-        walker = os.walk(directory) if recursive else [next(os.walk(directory))]
         
-        for root, _, files in walker:
-            for file in files:
-                file_path = os.path.join(root, file)
-                file_extension = os.path.splitext(file)[1].lower().lstrip('.')
-                
+        def process_node(node):
+            if node.isdir:
+                if recursive:
+                    # If recursive is True, process all children of this directory
+                    for child in scan_directory(node.path):
+                        process_node(child)
+            else:
+                # For files, extract the extension and check if it should be included
+                file_extension = os.path.splitext(node.path)[1].lower().lstrip('.')
                 if self.should_include_file(file_extension, categories):
-                    file_info = self.get_file_info(file_path, file_extension)
-                    category = self.get_file_category(file_extension)
+                    # If the file should be included, get its info and add it to the list
+                    file_info = self.get_file_info(node.path, file_extension)
+                    category = file_info['category']
                     file_list[category].append(file_info)
-        
+
+        # Start the crawl process from the root directory
+        root = Node(directory, True)
+        for entry in scan_directory(root.path):
+            process_node(entry)
+
         return file_list
+
 
     def should_include_file(self, file_extension, categories):
         if 'all' in categories:
@@ -139,11 +193,23 @@ class FileCrawler:
             'metadata': get_basic_metadata(file_path)
         }
 
+
+# ----------------------------
+# end of written by claude 3.5
+# ----------------------------
+
 class TaskProcessor:
+    '''
+    there is a task_config.json dictionary file that 
+    will have the instructions and promp parameters. this 
+    gets loaded and the task is then exectuted accordingly
+    '''
+    
     def __init__(self, llm_processor, all_tasks_config):
         self.llm_processor = llm_processor
         self.all_tasks_config = read_from_json(all_tasks_config)
-
+    
+    
     def process_files(self, file_list, tasks=[]):
         results = {}
         for category, files in file_list.items():
@@ -153,7 +219,6 @@ class TaskProcessor:
                 result = self.process_tasks(file_info, content, tasks)
                 if result:
                     results[file_path] = result
-                    
         return results
 
     def process_tasks(self, file_info, content, tasks):
@@ -164,25 +229,38 @@ class TaskProcessor:
                     print(f"Invalid task: {task}")
                     result[task] = "Invalid task"
                     continue
+                
+                #load the config for the specific task and call the
+                #llm to execute it
                 task_config = self.all_tasks_config.get(task)
+                
+                #if we are summarizing something we don't necessarily
+                #need to read the whole document, but if we are
+                #translating it we do, so if num_chunks is 0 then
+                #use as many chunks as needed for the document
                 num_chunks = task_config.get('num_chunks')
+                
                 if task_config:
                     result[task] = self.llm_processor.process_text(
                         content,  
                         task_config,
                         num_chunks=num_chunks
                     )
+                    
+                    #llms return janky json
                     result[task] = clean_json(result[task])
+                    
+                    write_json(file_info['path'], result)
+                    
             except Exception as e:
                 print(f"Error processing task '{task}': {str(e)}")
                 result[task] = f"Error: {str(e)}"
      
-         
         return result if len(result) > 1 else None
 
 def main():
     parser = argparse.ArgumentParser(description='Process documents in filesystem')
-    parser.add_argument('--api-url', default='http://172.16.0.219:5001/api', help='the URL of the LLM API')
+    parser.add_argument('--api-url', default='http://172.0.0.1:5001/api', help='the URL of the LLM API')
     parser.add_argument('--chunksize', default=1024, type=int, help='max tokens per chunk')
     parser.add_argument('--password', default='', help='server password')
     parser.add_argument('--model', default='llama3', help='llama3, cmdr, wizard, chatml, alpaca, mistral, phi3')
