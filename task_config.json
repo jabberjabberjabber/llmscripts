@@ -34,8 +34,8 @@
         "num_chunks": 2,
         "write_result": true,
         "parameters": {
-            "temperature": 1,
-            "min_p": 0
+            "temperature": 0.5,
+            "min_p": 0.05
         }
     },
     "json": {
@@ -47,8 +47,30 @@
             "min_p": 0.05,
             "rep_pen": 1
         }
+    }, 
+    "repeat": {
+        "instruction": "Repeat the text without changes.\nText: ",
+        "write_result": false,
+		"num_chunks": 0,
+        "parameters": {
+            "temperature": 1,
+            "min_p": 0.05,
+            "rep_pen": 1
+        }
     },
-    "custom": {
+    
+	"needle": {
+	"instruction": "According to the following text, what did John Carmack say about Quest 2 sales?\nText: ",
+	"write_result": false,
+	"num_chunks": 0,
+	"parameters": {
+		"temperature": 0,
+		"min_p": 0,
+		"rep_pen": 1
+		}	
+	},
+	
+	"custom": {
         "instruction": "This is a placeholder.\nText: ",
         "num_chunks": 0,
         "write_result": false,

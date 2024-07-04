@@ -7,6 +7,8 @@ from collections import defaultdict, namedtuple
 from tika import parser
 from json_repair import repair_json
 from natsort import os_sorted
+from datetime import datetime
+
 
 # -----------------------------
 # Start of written by claud 3.5
@@ -38,12 +40,14 @@ def scan_directory(path):
 # end of written by claude 3.5
 # ----------------------------
 
-def get_basic_metadata(file_path):
-    return {
-        'size': os.path.getsize(file_path),
-        'created': os.path.getctime(file_path),
-        'modified': os.path.getmtime(file_path)
-    }
+def get_basic_metadata(file_path):    
+        created = os.path.getctime(file_path)
+        modified = os.path.getmtime(file_path)
+        return{
+            'size': os.path.getsize(file_path),
+            'created': datetime.fromtimestamp(created).isoformat(),
+            'modified': datetime.fromtimestamp(modified).isoformat()
+        }
     
 def clean_json(data):
     '''
@@ -140,30 +144,23 @@ class FileCrawler:
 # ------------------------------
     
     def crawl(self, directory, recursive=False, categories=None):
-        # Use defaultdict to automatically create lists for new categories
         file_list = defaultdict(list)
-        
-        def process_node(node):
-            if node.isdir:
-                if recursive:
-                    # If recursive is True, process all children of this directory
-                    for child in scan_directory(node.path):
-                        process_node(child)
-            else:
-                # For files, extract the extension and check if it should be included
-                file_extension = os.path.splitext(node.path)[1].lower().lstrip('.')
+        walker = os.walk(directory) if recursive else [next(os.walk(directory))]
+
+        for root, _, files in walker:
+            sorted_files = os_sorted(files)
+            for file in sorted_files:
+                file_path = os.path.join(root, file)
+                file_extension = os.path.splitext(file)[1].lower().lstrip('.')
+
                 if self.should_include_file(file_extension, categories):
-                    # If the file should be included, get its info and add it to the list
-                    file_info = self.get_file_info(node.path, file_extension)
-                    category = file_info['category']
+                    file_info = self.get_file_info(file_path, file_extension)
+                    category = self.get_file_category(file_extension)
                     file_list[category].append(file_info)
-
-        # Start the crawl process from the root directory
-        root = Node(directory, True)
-        for entry in scan_directory(root.path):
-            process_node(entry)
-
+        
         return file_list
+            
+
 
 
     def should_include_file(self, file_extension, categories):
@@ -250,12 +247,12 @@ class TaskProcessor:
                     #llms return janky json
                     result[task] = clean_json(result[task])
                     
-                    write_json(file_info['path'], result)
+                    
                     
             except Exception as e:
                 print(f"Error processing task '{task}': {str(e)}")
                 result[task] = f"Error: {str(e)}"
-     
+            write_to_json(file_info['path'], result)
         return result if len(result) > 1 else None
 
 def main():
@@ -265,9 +262,9 @@ def main():
     parser.add_argument('--password', default='', help='server password')
     parser.add_argument('--model', default='llama3', help='llama3, cmdr, wizard, chatml, alpaca, mistral, phi3')
     parser.add_argument('directory', help='Directory to search')
-    parser.add_argument('--recursive', action='store_false', help='Search recursively')
+    parser.add_argument('--recursive', action='store_true', help='Search recursively')
     parser.add_argument('--categories', nargs='+', help='document, spreadsheet, web, code, archive')
-    parser.add_argument('--tasks', nargs='+', default=['info'], help='info, summarize, translate, interrogate, metadata, custom')
+    parser.add_argument('--tasks', nargs='+', default=['info'], help='info, summarize, translate, interrogate, repeat, metadata, custom')
     parser.add_argument('--task-config', default='task_config.json', help='task_config.json')
     parser.add_argument('--write-json', action='store_true', help='Write to json')
     parser.add_argument('--output-file', default='results', help='json output-file')
