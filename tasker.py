@@ -205,7 +205,8 @@ class TaskProcessor:
     def __init__(self, llm_processor, all_tasks_config):
         self.llm_processor = llm_processor
         self.all_tasks_config = read_from_json(all_tasks_config)
-    
+        
+        
     
     def process_files(self, file_list, tasks=[]):
         results = {}
@@ -230,7 +231,6 @@ class TaskProcessor:
                 #load the config for the specific task and call the
                 #llm to execute it
                 task_config = self.all_tasks_config.get(task)
-                
                 #if we are summarizing something we don't necessarily
                 #need to read the whole document, but if we are
                 #translating it we do, so if num_chunks is 0 then
@@ -242,6 +242,7 @@ class TaskProcessor:
                         content,  
                         task_config,
                         num_chunks=num_chunks
+                        
                     )
                     
                     #llms return janky json
@@ -260,7 +261,7 @@ def main():
     parser.add_argument('--api-url', default='http://172.0.0.1:5001/api', help='the URL of the LLM API')
     parser.add_argument('--chunksize', default=1024, type=int, help='max tokens per chunk')
     parser.add_argument('--password', default='', help='server password')
-    parser.add_argument('--model', default='llama3', help='llama3, cmdr, wizard, chatml, alpaca, mistral, phi3')
+    parser.add_argument('--model', default='alpaca', help='llama3, cmdr, wizard, chatml, alpaca, mistral, phi3')
     parser.add_argument('directory', help='Directory to search')
     parser.add_argument('--recursive', action='store_true', help='Search recursively')
     parser.add_argument('--categories', nargs='+', help='document, spreadsheet, web, code, archive')
@@ -268,12 +269,14 @@ def main():
     parser.add_argument('--task-config', default='task_config.json', help='task_config.json')
     parser.add_argument('--write-json', action='store_true', help='Write to json')
     parser.add_argument('--output-file', default='results', help='json output-file')
+    parser.add_argument('--prompt-template', default='prompt_template.json')
     args = parser.parse_args()
-
+    prompts = read_from_json(args.prompt_template)
+    prompt = prompts.get(args.model)
             
     file_crawler = FileCrawler()
     file_list = file_crawler.crawl(args.directory, args.recursive, args.categories)
-    llm_processor = LLMProcessor(args.api_url, args.password, args.model, args.chunksize)
+    llm_processor = LLMProcessor(args.api_url, args.password, args.chunksize, model_template=prompt)
     task_processor = TaskProcessor(llm_processor, args.task_config)
     results = task_processor.process_files(file_list, args.tasks)
     if args.write_json:

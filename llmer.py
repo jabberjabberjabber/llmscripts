@@ -8,15 +8,15 @@ import threading
 import bisect
 from spacy.lang.en import English
 import base64
+import json
 
 
 
 class LLMProcessor:
-    def __init__(self, api_url, password="", model="wizard", chunk_size=512):
+    def __init__(self, api_url, password="", chunk_size=512, model_template=""):
         self.api_url = api_url
-
+        self.model_template = model_template
         self.password = password
-        self.model = model
         self.chunk_size = chunk_size
         self.nlp = English()
         self.nlp.add_pipe('sentencizer')
@@ -35,6 +35,33 @@ class LLMProcessor:
             print("Error: Unable to get max context length from API")
             sys.exit(1)
 
+
+    def load_prompt_templates(self):
+        default_templates = {
+            "default": {
+                "startTurn": "",
+                "endSystemTurn": "",
+                "endUserTurn": "",
+                "endTurn": "",
+                "systemRole": "",
+                "userRole": "",
+                "assistantRole": "",
+                "prependPrompt": "",
+                "systemAfterPrepend": "",
+                "postPrompt": "",
+                "memorySystem": "",
+                "memoryUser": "",
+                "responseStart": "",
+                "specialInstructions": ""
+            }
+        }
+        
+        if os.path.exists('prompt_templates.json'):
+            with open('prompt_templates.json', 'r', encoding='utf-8') as f:
+                print(json.load(f))
+                
+        return default_templates
+        
     def interrogate_image(self, image_path):
         try:
             with open(image_path, "rb") as image_file:
@@ -133,18 +160,52 @@ class LLMProcessor:
                 chunks = [0, 'error']
         else:
             return chunks
-    def prompt_template(self, instruction, content ):
-        templates = {
-            "cmdr": ("<|START_OF_TURN_TOKEN|><|USER_TOKEN|>\n##Instruction\n", "<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"),
-            "llama3": ("<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nInstructions: ", "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"),
-            "mistral": ("[INST] ", " [/INST]"),
-            "alpaca": ("### Instruction:\n", "\n\n### Response:\n"),
-            "chatml": ("<im_start>system\n You are a helpful assistant.<|im_end|>\n<|im_start|>user\n", "<|im_end|>\n<|im_start|>assistant\n"),
-            "phi3": ("<|user|>\n", "<|end|>\n<|assistant|>"),
-            "wizard": (" USER: "," ASSISTANT: ")
-        }
-        start_seq, end_seq = templates.get(self.model, templates["wizard"])
-        return start_seq + instruction + content + end_seq
+    def prompt_template(self, instruction, content):
+        template = self.model_template
+        
+        # Construct system part
+        system_part = (f"{template.get('bos', '')}"
+                       f"{template.get('startTurn', '')}"
+                       f"{template.get('startSystem', '')}"
+                       f"{template.get('systemRole', '')}"
+                       f"{template.get('systemAfterPrepend', '')}"
+                       f"<text>{content}</text>"
+                       f"{template.get('endSystemRole', '')}"
+                       f"{template.get('memorySystem', '')}"
+                       f"{template.get('endSystemTurn', '')}")
+
+        # Construct user part
+        user_part = (f"{template.get('startTurn', '')}"
+                     f"{template.get('startUser', '')}"
+                     f"{template.get('userRole', '')}"
+                     f"{template.get('roleGap', '')}"
+                     f"{template.get('memoryUser', '')}"
+                     f"{instruction}"
+                     
+                     f"{template.get('endUserRole', '')}"
+                     f"{template.get('endUserTurn', '')}")
+
+        # Construct assistant part
+        assistant_part = (f"{template.get('startTurn', '')}"
+                          f"{template.get('startAssistant', '')}"
+                          f"{template.get('assistantRole', '')}"
+                          f"{template.get('roleGap', '')}"
+                          f"{template.get('responseStart', '')}")
+
+        # Combine all parts
+        prompt = (f"{template.get('prependPrompt', '')}"
+                  f"{system_part}"
+                  f"{user_part}"
+                  f"{assistant_part}"
+                  f"{template.get('postPrompt', '')}"
+                  f"{template.get('endTurn', '')}"
+                  f"{template.get('eos', '')}")
+
+        # Apply special instructions
+        if template.get('specialInstructions') == '.rstrip()':
+            prompt = prompt.rstrip()
+
+        return prompt
 
     def _call_api(self, payload):
         payload['genkey'] = str(self.genkey)

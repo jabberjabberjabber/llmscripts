@@ -1,6 +1,6 @@
 {
     "summarize": {
-        "instruction": "Provide a concise summary of the following text:",
+        "instruction": "Provide a concise summary of the text.",
         "num_chunks": 4,
         "write_result": true,
         "parameters": {
@@ -22,7 +22,7 @@
         }
     },
     "translate": {
-        "instruction": "Translate the following text to English:",
+        "instruction": "Translate the text to English.",
         "write_result": true,
         "parameters": {
             "temperature": 0.3,
@@ -30,7 +30,7 @@
         }
     },
     "metadata": {
-        "instruction": "Extract metadata from the following text and return it using JSON schema:",
+        "instruction": "Extract metadata from the text and return it using JSON schema.",
         "num_chunks": 2,
         "write_result": true,
         "parameters": {
@@ -39,7 +39,7 @@
         }
     },
     "json": {
-        "instruction": "Output the information using JSON schema.\nText: ",
+        "instruction": "Output the information from the text using JSON schema.",
         "num_chunks": 4,
         "write_result": true,
         "parameters": {
@@ -49,7 +49,7 @@
         }
     }, 
     "repeat": {
-        "instruction": "Repeat the text without changes.\nText: ",
+        "instruction": "Repeat the text without changes.",
         "write_result": false,
 		"num_chunks": 0,
         "parameters": {
@@ -60,7 +60,7 @@
     },
     
 	"needle": {
-	"instruction": "According to the following text, what did John Carmack say about Quest 2 sales?\nText: ",
+	"instruction": "According to the text, what did John Carmack say about Quest 2 sales?",
 	"write_result": false,
 	"num_chunks": 0,
 	"parameters": {
@@ -71,7 +71,7 @@
 	},
 	
 	"custom": {
-        "instruction": "This is a placeholder.\nText: ",
+        "instruction": "This is a placeholder.",
         "num_chunks": 0,
         "write_result": false,
         "parameters": {
