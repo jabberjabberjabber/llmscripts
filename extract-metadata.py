@@ -3,6 +3,7 @@ import json
 import argparse
 from llmprocessor import LLMProcessor, TaskProcessor, FileUtils, FileCrawler
 
+    
 def extract_metadata(file_path, llm_processor, task_processor):
     content = FileUtils.read_file_content(file_path)
     metadata_task = {
@@ -11,12 +12,17 @@ def extract_metadata(file_path, llm_processor, task_processor):
         "parameters": {"temperature": 0.7, "min_p": 0.05, "top_p": 0.9}
     }
     result = task_processor.process_tasks(file_path, content=content, tasks=["metadata"])
-    metadata_str = json.dumps(result.get("metadata", "{}"))
-    extracted_metadata = FileUtils.clean_json(metadata_str)
     
+    # Check if result is a dictionary
+    if isinstance(result, dict):
+        extracted_metadata = result.get("metadata", "{}")
+    else:
+        # If result is not a dictionary, treat it as a string
+        extracted_metadata_str = FileUtils.clean_json(result) 
+        extracted_metadata = extracted_metadata_str.get("metadata", "{}")
     if isinstance(extracted_metadata, str):
         try:
-            extracted_metadata = json.loads(extracted_metadata)
+            extracted_metadata = FileUtils.json.loads(extracted_metadata)
         except json.JSONDecodeError:
             extracted_metadata = {}
     
@@ -25,37 +31,42 @@ def extract_metadata(file_path, llm_processor, task_processor):
         "author": extracted_metadata.get("author", "Unknown"),
         **FileUtils.get_basic_metadata(file_path)
     }
-
 def process_documents(directory, api_url, api_password, task_config_path, output_path, prompt_config, model_name):
     file_crawler = FileCrawler()
     llm_processor = LLMProcessor(api_url=api_url, password=api_password, model=model_name, prompt_config=prompt_config)
     task_processor = TaskProcessor(llm_processor, task_config_path)
     
-    # Load existing metadata if the file exists
+
     if os.path.exists(output_path):
         with open(output_path, 'r') as f:
             central_metadata = json.load(f)
     else:
         central_metadata = {}
 
-    # Crawl the directory
-    file_list = file_crawler.crawl(directory, recursive=False, categories=["document"])
 
-    # Process each document
+    file_list = file_crawler.crawl(directory, recursive=False, categories=["document"])
+    total_files = sum(len(files) for files in file_list.values())
+    processed_files = 0
+    
     for category, files in file_list.items():
         for file_info in files:
             file_path = file_info['path']
             if file_path not in central_metadata:
-                print(f"Processing: {file_path}")
-                metadata = extract_metadata(file_path, llm_processor, task_processor)
-                central_metadata[file_path] = metadata
+                processed_files += 1
+                #current_time = datetime.now().strftime("%H:%M:%S")
+                #print(f"\rProcessing file {processed_files} of {total_files}: {file_path}", end="", flush=True)
                 
-                # Write incrementally
-                with open(output_path, 'w') as f:
-                    json.dump(central_metadata, f, indent=2)
+                try:
+                    metadata = extract_metadata(file_path, llm_processor, task_processor)
+                    central_metadata[file_path] = metadata
 
-    print(f"All metadata saved to {output_path}")
-
+                    with open(output_path, 'w') as f:
+                        json.dump(central_metadata, f, indent=2)
+                except Exception as e:
+                    print(f"\nError processing {file_path}: {str(e)}")
+                    continue
+    print(f"\nAll metadata saved to {output_path}")
+    
 def main():
     parser = argparse.ArgumentParser(description="Extract metadata from documents using LLM.")
     parser.add_argument("directory", help="Directory containing the documents")

@@ -14,6 +14,16 @@ from tika import parser
 from json_repair import repair_json
 from natsort import os_sorted
 
+'''
+To do:
+
+Add counter
+Add flag for api live viewitems
+Only show api results
+check if document is in english
+
+'''
+
 class FileUtils:
     @staticmethod
     def get_basic_metadata(file_path):    
@@ -257,6 +267,7 @@ class LLMProcessor:
             "responseStart": "",
             "specialInstructions": ""
             }
+ 
         if self.prompt_config is not None:
             if os.path.exists(self.prompt_config):
                 templates = FileUtils.read_from_json(self.prompt_config)
@@ -273,9 +284,7 @@ class LLMProcessor:
         if (self.tokens + 100) < self.max_context_length:
             if num_chunks == 0:
                 print(f"Cannot fit content into context. Too many tokens: {self.tokens}")
-                return 
-            else:
-                chunks = [cleaned_content]        
+                return        
         else:
             chunks = self.chunkify(cleaned_content, num_chunks)
             
