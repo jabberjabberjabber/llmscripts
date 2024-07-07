@@ -49,7 +49,9 @@ class FileUtils:
     def clean_json(data):
         if data is None:
             return ""
-
+        if isinstance(data, dict):
+            data = json.dumps(data)
+            
         pattern = r'```json\s*(.*?)\s*```'
         match = re.search(pattern, data, re.DOTALL)
 
@@ -67,7 +69,10 @@ class FileUtils:
         try:
             return json.loads(repair_json(json_str))
         except json.JSONDecodeError:
-            return ftfy.fix_text(data)
+            if isinstance(data, dict):
+                return data
+            else:
+                return {data}
         
     @staticmethod
     def read_file_content(file_path):
@@ -90,6 +95,20 @@ class FileUtils:
         with open(json_path, 'w', encoding='utf-8') as file:
             json.dump(data, file, indent=2, ensure_ascii=False)
         print(f"Result written to: {json_path}")
+        
+    @staticmethod
+    def write_file_content(file_path, content):
+        if os.path.exists(file_path):
+            print(f"File already exists: {file_path}\nAppending...")
+            #content += read_file_content(file_path)
+        try:
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(content)
+                return
+        except:
+            print(f"Error writing: {file_path}")
+            return
+            
         
     @staticmethod
     def read_from_json(file_path):
@@ -170,7 +189,7 @@ class FileCrawler:
             'name': os.path.basename(file_path),
             'extension': file_extension,
             'category': self.get_file_category(file_extension),
-            'metadata': FileUtils.get_basic_metadata(file_path)
+            'file_metadata': FileUtils.get_basic_metadata(file_path)
         }
 
 class TaskProcessor:
@@ -280,12 +299,16 @@ class LLMProcessor:
         
         cleaned_content = FileUtils.clean_content(content)
         self.tokens = self.get_token_count(json.dumps(cleaned_content))
-        self.max_context_length = self.get_max_context()        
-        if (self.tokens + 100) < self.max_context_length:
-            if num_chunks == 0:
-                print(f"Cannot fit content into context. Too many tokens: {self.tokens}")
-                return        
-        else:
+        self.max_context_length = self.get_max_context()
+        usable_tokens = self.tokens + 200
+        if num_chunks == 0 and (usable_tokens > self.max_context_length):
+            print(f"Cannot fit content into context. Too many tokens: {self.tokens}")
+            num_chunks = math.ceil(usable_tokens / self.max_context_length) 
+            self.chunk_size = int(usable_tokens / num_chunks)
+        elif num_chunks == 0 and (usable_tokens <= self.max_context_length):
+            chunks = [cleaned_content]
+            self.chunk_size = usable_tokens
+        if num_chunks > 0:
             chunks = self.chunkify(cleaned_content, num_chunks)
             
         results = []

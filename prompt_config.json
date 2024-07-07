@@ -28,6 +28,20 @@
     "specialInstructions": ""
   },
   
+  "phi3": {
+    "systemAfterPrepend": "",
+    "postPrompt": "",
+    "memorySystem": "",
+    "endSystemTurn": "",
+    "responseStart": "",
+    "startTurn": "",
+    "userRole": "<|user|>\n",
+    "memoryUser": "",
+    "endUserTurn": "<|end|>\n",
+    "assistantRole": "<|assistant|>",
+    "endAssistantTurn": "<|end|>\n",
+    "specialInstructions": ""
+  },
   "defaultJson": {
     "systemRole": "system",
     "prependPrompt": "```JSON\n",

@@ -6,43 +6,41 @@ from llmprocessor import LLMProcessor, TaskProcessor, FileUtils, FileCrawler
     
 def extract_metadata(file_path, llm_processor, task_processor):
     content = FileUtils.read_file_content(file_path)
-    metadata_task = {
-        "instruction": "Extract the title and author from this document. Return the result as JSON with 'title' and 'author' fields.",
-        "num_chunks": 1,
-        "parameters": {"temperature": 0.7, "min_p": 0.05, "top_p": 0.9}
-    }
-    result = task_processor.process_tasks(file_path, content=content, tasks=["metadata"])
+    tasks = ["metadata"]
+    result = FileUtils.clean_json(json.dumps(task_processor.process_tasks(file_path, content=content, tasks=tasks)))
+
+    llm_metadata = result.get('metadata', {})
     
-    # Check if result is a dictionary
-    if isinstance(result, dict):
-        extracted_metadata = result.get("metadata", "{}")
-    else:
-        # If result is not a dictionary, treat it as a string
-        extracted_metadata_str = FileUtils.clean_json(result) 
-        extracted_metadata = extracted_metadata_str.get("metadata", "{}")
-    if isinstance(extracted_metadata, str):
-        try:
-            extracted_metadata = FileUtils.json.loads(extracted_metadata)
-        except json.JSONDecodeError:
-            extracted_metadata = {}
-    
-    return {
-        "title": extracted_metadata.get("title", "Unknown"),
-        "author": extracted_metadata.get("author", "Unknown"),
-        **FileUtils.get_basic_metadata(file_path)
+    file_metadata = FileUtils.get_basic_metadata(file_path)
+    combined_metadata = {
+        "File": os.path.basename(file_path),
+        "Title": llm_metadata.get("TITLE", "Unknown"),
+        "Creator": "Unknown",
+        "Author": llm_metadata.get("AUTHOR", "Not Specified"),
+        "Subject": llm_metadata.get("SUBJECT", "Unknown"),
+        "Topic": llm_metadata.get("TOPIC", "Unknown"),
+        "Description": "Adobe PDF",  # You might want to determine this dynamically
+        "FullPath": file_path,
+        "PreviousPath": "",
+        "PreviousName": "",
+        "Size (KB)": file_metadata['size'] // 1024,  # Convert bytes to KB
+        "Created": file_metadata['created'],
+        "Modified": file_metadata['modified'],
+        "Category": "Document",  # You might want to determine this dynamically
+        "Importance": 0.1  # You might want to calculate this somehow
     }
+    
+    return combined_metadata       
 def process_documents(directory, api_url, api_password, task_config_path, output_path, prompt_config, model_name):
     file_crawler = FileCrawler()
     llm_processor = LLMProcessor(api_url=api_url, password=api_password, model=model_name, prompt_config=prompt_config)
     task_processor = TaskProcessor(llm_processor, task_config_path)
-    
 
     if os.path.exists(output_path):
         with open(output_path, 'r') as f:
             central_metadata = json.load(f)
     else:
         central_metadata = {}
-
 
     file_list = file_crawler.crawl(directory, recursive=False, categories=["document"])
     total_files = sum(len(files) for files in file_list.values())
@@ -51,14 +49,14 @@ def process_documents(directory, api_url, api_password, task_config_path, output
     for category, files in file_list.items():
         for file_info in files:
             file_path = file_info['path']
-            if file_path not in central_metadata:
+            file_name = os.path.basename(file_path)
+            if file_name not in central_metadata:
                 processed_files += 1
-                #current_time = datetime.now().strftime("%H:%M:%S")
-                #print(f"\rProcessing file {processed_files} of {total_files}: {file_path}", end="", flush=True)
+                print(f"\rProcessing file {processed_files} of {total_files}: {file_path}", end="", flush=True)
                 
                 try:
                     metadata = extract_metadata(file_path, llm_processor, task_processor)
-                    central_metadata[file_path] = metadata
+                    central_metadata[file_name] = metadata  # Use filename as key
 
                     with open(output_path, 'w') as f:
                         json.dump(central_metadata, f, indent=2)
