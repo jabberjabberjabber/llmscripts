@@ -32,7 +32,7 @@
         }
     },
     "metadata": {
-        "instruction": "Extract metadata from the text and return it using JSON schema.",
+        "instruction": "Extract title and author and subject from the text and return it using JSON schema.",
         "num_chunks": 2,
         "write_result": true,
         "parameters": {

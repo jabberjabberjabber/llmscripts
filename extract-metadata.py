@@ -11,7 +11,8 @@ def extract_metadata(file_path, llm_processor, task_processor):
         "parameters": {"temperature": 0.7, "min_p": 0.05, "top_p": 0.9}
     }
     result = task_processor.process_tasks(file_path, content=content, tasks=["metadata"])
-    extracted_metadata = FileUtils.clean_json(result.get("metadata", "{}"))
+    metadata_str = json.dumps(result.get("metadata", "{}"))
+    extracted_metadata = FileUtils.clean_json(metadata_str)
     
     if isinstance(extracted_metadata, str):
         try:
