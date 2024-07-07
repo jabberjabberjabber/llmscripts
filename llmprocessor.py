@@ -206,7 +206,7 @@ class TaskProcessor:
         return self.llm_processor.process_text(content, task_config)
 
 class LLMProcessor:
-    def __init__(self, api_url, password="", model="chatML", prompt_config=None, chunk_size=512):
+    def __init__(self, api_url, password="", model="", prompt_config=None, chunk_size=512):
         self.api_url = api_url
         self.password = password
         self.genkey = f"KCP{''.join(str(random.randint(0, 9)) for _ in range(4))}"
@@ -260,7 +260,7 @@ class LLMProcessor:
         if self.prompt_config is not None:
             if os.path.exists(self.prompt_config):
                 templates = FileUtils.read_from_json(self.prompt_config)
-                self.chat_template = templates.get(model)
+                self.chat_template = templates.get(self.model)
         else:
             self.chat_template = default_template
   
