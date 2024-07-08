@@ -1,0 +1,5 @@
+ftfy>=6.2.0
+spacy>=3.7.2
+tika>=2.6.0
+json_repair>=0.25.2
+natsort>=8.4.0
