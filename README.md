@@ -13,15 +13,74 @@ Grab latest koboldcpp from repo:
 
   * https://github.com/LostRuins/koboldcpp
 
-Grab the largest gemma2-9b GGUF that can fit in your VRAM - 20%:
+Grab the phi3 llava llm gguf and mmproj file:
 
-* https://huggingface.co/bartowski/gemma-2-9b-it-GGUF
+* https://huggingface.co/xtuner/llava-phi-3-mini-gguf
 
-Open koboldcpp executable, load gemma2, set options and when it is loaded type:
+Open koboldcpp executable, load phi3 and the mmproj, set options and when it is loaded type:
 
 ```
-python extract-metadata.py "c:\directory\to\crawl\with\no\ending\slash"
+python llm-utility.py "c:\directory\to\crawl\with\no\ending\slash"
 ```
+
+If you are want it to crawl through the entire directory tree add --recursive
+Open the file-metadata.json file in notepad++ or chrome. It will look like this:
+
+```json
+{
+  "carmack.txt": {
+    "File": "carmack.txt",
+    "Title": "Connect 2021: John Carmack",
+    "Caption": "",
+    "Creator": "John Carmack",
+    "Author": "John Carmack",
+    "Subject": "Virtual Reality",
+    "Topic": "Presentation and Discussion of Virtual Reality Technologies and Advancements",
+    "Filetype": "",
+    "FullPath": "C:\\test\\carmack.txt",
+    "PreviousPath": "",
+    "PreviousName": "",
+    "Size (KB)": 5,
+    "Created": "2024-06-05T23:01:17.889296",
+    "Modified": "2024-06-05T23:01:30.246009",
+    "Category": "Document",
+    "ProposedFilename": "connect_2021_john_carmack.mp4"
+  },
+  "image2.jpg": {
+    "File": "image2.jpg",
+    "Title": "A Man in a Purple Plaid Jacket Holding a Red Leash with a Dog on the Other End of the Leash",
+    "Caption": "A man in a purple plaid jacket holding a red leash with a dog on the other end of the leash.",
+    "Creator": "Anonymous",
+    "Author": "Anonymous",
+    "Subject": "Dogs",
+    "Topic": "Pets",
+    "Filetype": "",
+    "FullPath": "C:\\test\\image2.jpg",
+    "PreviousPath": "",
+    "PreviousName": "",
+    "Size (KB)": 98,
+    "Created": "2024-07-08T18:47:29.460219",
+    "Modified": "2024-07-08T18:47:21.701451",
+    "Category": "Image",
+    "ProposedFilename": "man_in_purple_jacket_and_dog.jpg"
+  }
+```
+
+Now you can do whatever you want with that information.
+
+But if you are feeling lucky you can have it rename all your files:
+
+```
+python .\file-renamer-script.py
+```
+
+It will then rename every document and image that it got info for and put in the file-metadata.json file. It will also update the field for PreviousName to be the previous filename.
+It will hopefully disregard wrong proposed extensions.
+
+*I TAKE NO RESPONSIBILITY FOR WHAT HAPPENS WHEN YOU RUN THIS*
+
+It might rename all your files to be variations of swear words or something -- the LLM is the one calling the shots and who knows what it will do. At least check the filenames are sane before running the renamer.
+
 Why did I choose these requirements?
 
 * ftfy fixes unicode parsing errors that happened in the past (if a file was decoded and/or encoded wrong by some other program)
