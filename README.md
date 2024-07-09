@@ -1,3 +1,25 @@
+**What does this do?**
+
+llm-utility.py queries a koboldcpp API running an LLM and asks it for information on files. It starts in a directory specified by the user and finds any files in request caegories. If the ```--recursive``` flag is added it will crawl through all directories inside the specified as well. 
+
+If you add
+
+```--categories documents```
+
+it will attempt to parse any documents (txt, pdf, doc, etc) and it will send the content to the LLM as configured by the task configuration. The task will define how it is prompted and any parameters and how many chunks it will use. If set to 999 it will send the entire document in pieces with a prompt attached to each chunk in order -- useful for translated or editing a document. If num_chunks is 0 it will attempt to send the entire document in a single chunk which will only work if the document's token count is lower than the LLMs context size combined with its generation length. If num_chunks is in between those it will take always send the first chunk, then it will randomly select chunks from the document until it reaches num_chunks and stick them all together and send that wrapped in the prompt. This works for summaries and descriptions and analysis where the whole document doesn't need to be ingested. The default is set to 1 and will just grab the first chunk of size chunk_size at sentence limits and will query the LLM for Title, Topic, Subject, Author, Creator, and then ask for a suggested filename. 
+
+If you add
+
+```--categories images```
+
+it will send the images to the API one by one and ask the LLM to describe them. This requires a vision capable model with an mmproj file, like llava. Once the image is captioned it sends the caption to LLM as if the caption were a document and asks for a description and recommended filename.
+
+*The llm-utility.py script does not alter any files.*
+
+The other script, if you run it, will irrevocably and without questioning or confirming rename every file in the file_metadata.json created by the llm-utility to the recommended on by the LLM by using the path included. It will rename them ALL. **Do not run this on anything you care about without at least reading the json to see what it will rename.** 
+
+**The script adds files info to the json every time you run it!** If you run it at directory 1, then again at directory 2, it will add on the file info from directory 2 to directory 1 and if you run the rename script it will rename all the files in both directories**
+
 Installation
 
 Install spacy and requirements:
