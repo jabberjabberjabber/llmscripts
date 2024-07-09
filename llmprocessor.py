@@ -80,12 +80,15 @@ class FileUtils:
             with open(file_path, 'r', encoding='utf-8') as file:
                 return file.read()
         except UnicodeDecodeError:
-            return FileUtils.parse_with_tika(file_path)
+            return (FileUtils.parse_with_tika(file_path)).get('content')
+    @staticmethod
+    def read_file_metadata(file_path):
+        return (FileUtils.parse_with_tika(file_path)).get('metadata')
 
     @staticmethod
     def parse_with_tika(file_path):
         parsed = parser.from_file(file_path)
-        return parsed.get('content', '')
+        return parsed
 
     @staticmethod
     def write_to_json(file_path, data):
@@ -118,8 +121,7 @@ class FileUtils:
                 return json.loads(opened)
         except:
             print(f"JSON error: {file_path}")
-            return None
-
+            return None     
     @staticmethod
     def clean_content(content):
         if content is None:
